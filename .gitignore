@@ -1,4 +1,6 @@
-.idea
+.idea/
+
+# Virtualenv
 venv
 
 # PyCharm
