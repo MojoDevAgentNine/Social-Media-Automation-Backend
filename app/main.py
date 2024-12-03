@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
-# from .routes import user_routes
+from .routes import user_routes
 
 app = FastAPI(
     title="Mojo API",
@@ -23,7 +23,6 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
-# app.include_router(user_routes.router, prefix="/user", tags=["user"])
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -42,3 +41,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "message": "API is healthy"}
+
+
+app.include_router(user_routes.router, prefix="/user", tags=["User Accounts"])

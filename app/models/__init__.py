@@ -1,2 +1,1 @@
-class User:
-    pass
+from .user import User
