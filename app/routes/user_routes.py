@@ -1,4 +1,5 @@
 import os
+from app.axiom_logger.authentication import logger
 from app.core.permissions import get_super_admin_user, get_current_user, oauth2_scheme
 from app.schemas.user_schema import UserRegisterRequest, ProfileUpdateRequest, \
     ChangePasswordRequest, ProfileResponse
@@ -41,6 +42,7 @@ def register(
 ):
     try:
         user = register_user(db, request)
+        logger.info(f"Email: {user.email}, Role: {user.role} - User registered successfully")
         return {
             "message": "User registered successfully",
             "user": {
@@ -49,6 +51,7 @@ def register(
             }
         }
     except ValueError as e:
+        logger.error(f"Email: {request.email}, Role: {request.role} - {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -77,7 +80,7 @@ def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
         # Generate both access and refresh tokens for the authenticated user
         access_token = create_access_token(data={"user_id": user.id})
         refresh_token = create_refresh_token(data={"user_id": user.id})
-
+        logger.info(f"Email: {user.email}, Role: {user.role} - User logged in successfully")
         # Return the response with both tokens
         return {
             "message": "Login successful",
@@ -86,6 +89,7 @@ def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
             "token_type": "bearer"
         }
     else:
+        logger.error(f"Email: {login_request.email}, Role: {login_request.role} - Invalid username/email or password")
         raise HTTPException(status_code=400, detail="Invalid username/email or password")
 
 
@@ -115,6 +119,7 @@ def logout(
     # Add the token to the blacklist to invalidate it
     db.add(TokenBlacklist(token=token))
     db.commit()
+    logger.info(f"Email: {current_user.email}, Role: {current_user.role} - User logged out successfully")
     return {"message": "Logged out successfully"}
 
 
@@ -142,20 +147,23 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
         user_id = payload.get("user_id")
 
         if user_id is None:
+            logger.warning(f"User ID: {user_id}, User Email: {payload.get('email')} - Invalid refresh token")
             raise HTTPException(status_code=401, detail="Invalid refresh token")
 
         # You can check if the user exists in the database (optional)
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
+            logger.warning(f"User ID: {user_id}, User Email: {payload.get('email')} - User not found")
             raise HTTPException(status_code=404, detail="User not found")
 
         # Create a new access token
         new_access_token = create_access_token(data={"user_id": user.id})
-
+        logger.info(f"User ID: {user_id}, User Email: {payload.get('email')} - New access token created")
         # Return the new access token
         return {"access_token": new_access_token, "token_type": "bearer"}
 
     except jwt.PyJWTError:
+        logger.error(f"Invalid refresh token")
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
 
@@ -179,6 +187,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 def get_users(db: Session = Depends(get_db), current_user: dict = Depends(get_super_admin_user)):
     # Get all users from the database
     users = get_all_users(db)
+    logger.info(f"Email: {current_user.get('email')}, Role: {current_user.get('role')} - All users retrieved successfully")
     return {"users": users}
 
 
@@ -219,7 +228,7 @@ def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)
         db.add(profile)
         db.commit()
         db.refresh(profile)
-
+    logger.info(f"Email: {user.email}, Role: {user.role} - User profile retrieved successfully")
     # Return user and profile data without password
     return {
         "email": user.email,
@@ -271,7 +280,7 @@ async def update_user_profile(
 
     db.commit()
     db.refresh(profile)
-
+    logger.info(f"Email: {current_user.email}, Role: {current_user.role} - User profile updated successfully")
     return ProfileResponse(
         first_name=profile.first_name,
         last_name=profile.last_name,
@@ -312,10 +321,12 @@ async def change_password(
 ):
     # Verify the old password
     if not bcrypt.verify(request.old_password, current_user.hashed_password):
+        logger.warning(f"User ID: {current_user.id}, User Email: {current_user.email} - Old password is incorrect")
         raise HTTPException(status_code=400, detail="Old password is incorrect")
 
     # Check if new password and confirm password match
     if request.new_password != request.confirm_password:
+        logger.warning(f"User ID: {current_user.id}, User Email: {current_user.email} - New password and confirmation do not match")
         raise HTTPException(status_code=400, detail="New password and confirmation do not match")
 
     # Hash the new password and update the database
@@ -327,5 +338,5 @@ async def change_password(
     # Add the current token to the blacklist
     db.add(TokenBlacklist(token=token))
     db.commit()
-
+    logger.info(f"User ID: {current_user.id}, User Email: {current_user.email} - Password changed successfully")
     return {"message": "Password changed successfully. Please log in again to continue."}

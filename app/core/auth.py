@@ -6,7 +6,7 @@ from app.models.user import User, UserRole, Profile
 from app.schemas.user_schema import UserRegisterRequest
 from datetime import datetime
 from fastapi import HTTPException
-
+from app.axiom_logger.authentication import logger
 
 
 """
@@ -34,6 +34,7 @@ def register_user(db: Session, user: UserRegisterRequest, current_user: User = N
     if current_user:
         # Only super_admin can create admin users
         if user.role == UserRole.ADMIN and current_user.role != UserRole.SUPER_ADMIN:
+            logger.critical(f"Email: {current_user.email}, Role: {current_user.role} - Only super admins can create admin users")
             raise HTTPException(
                 status_code=403,
                 detail="Only super admins can create admin users"
@@ -41,6 +42,7 @@ def register_user(db: Session, user: UserRegisterRequest, current_user: User = N
 
         # Only super_admin can create other super_admin users
         if user.role == UserRole.SUPER_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
+            logger.critical(f"Email: {current_user.email}, Role: {current_user.role} - Only super admins can create super admin users")
             raise HTTPException(
                 status_code=403,
                 detail="Only super admins can create super admin users"
@@ -126,8 +128,10 @@ def login_user(db: Session, email: str, password: str):
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=["HS256"])
+        logger.info(f"User ID: {payload.get('user_id')} User Email: {payload.get('email')} - Token verified")
         return payload.get("user_id")  # Return the user ID from the payload
     except jwt.PyJWTError:
+        logger.error("Invalid or expired token")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
