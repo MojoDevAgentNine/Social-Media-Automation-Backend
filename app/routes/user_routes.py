@@ -93,6 +93,35 @@ def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
 
 
 """
+    Log out a user by adding their token to the blacklist.
+
+    Args:
+        token (str): The refresh token provided by the client.
+        db (Session): Database session dependency.
+        current_user (User): The authenticated user.
+
+    Returns:
+        dict: A response containing a success message.
+
+    Raises:
+        HTTPException: If the refresh token is invalid or the user does not exist.
+"""
+@router.post("/logout")
+def logout(
+        token: str = Depends(oauth2_scheme),
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    # Add the token to the blacklist to invalidate it
+    db.add(TokenBlacklist(token=token))
+    db.commit()
+    return {"message": "Logged out successfully"}
+
+
+
+
+
+"""
     Generate a new access token using a valid refresh token.
 
     Args:
