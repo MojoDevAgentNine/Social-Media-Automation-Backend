@@ -1,4 +1,4 @@
-import jwt
+import jwt as pyjwt
 from fastapi import HTTPException
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -15,7 +15,7 @@ def create_access_token(data: dict):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = data.copy()
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = pyjwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 # Create refresh token
@@ -23,12 +23,12 @@ def create_refresh_token(data: dict):
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode = data.copy()
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = pyjwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 def decode_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("user_id")
-    except jwt.PyJWTError:
+    except pyjwt.PyJWTError:
         raise HTTPException(status_code=403, detail="Invalid token")

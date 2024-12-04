@@ -12,8 +12,7 @@ def verify_password(plain_password, hashed_password):
 def login_user(db: Session, login_request: UserLoginRequest):
     # Check if the provided username_or_email is an email or username
     user = db.query(User).filter(
-        (User.username == login_request.username_or_email) |
-        (User.email == login_request.username_or_email)
+        (User.email == login_request.email)
     ).first()
 
     if user and verify_password(login_request.password, user.hashed_password):
@@ -21,8 +20,8 @@ def login_user(db: Session, login_request: UserLoginRequest):
     return None  # Authentication failed
 
 def get_all_users(db: Session):
-    # Query all users, only return necessary fields like username, email, and is_active
-    return db.query(User.id, User.username, User.email, User.is_active).all()
+    users = db.query(User).all()
+    return users
 
 def get_authenticated_user(db: Session, user_id: int):
     # Query the user based on their ID

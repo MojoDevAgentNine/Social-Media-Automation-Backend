@@ -1,30 +1,73 @@
 import os
-from app.schemas.user_schema import UserRegisterRequest, PasswordResetRequest, UserLoginRequest, UpdateUserProfile, \
-    ChangePasswordRequest
+from app.core.permissions import get_super_admin_user, get_current_user, oauth2_scheme
+from app.schemas.user_schema import UserRegisterRequest, ProfileUpdateRequest, \
+    ChangePasswordRequest, ProfileResponse
 from app.core.auth import register_user, login_user
 from app.schemas.user_schema import UserLoginRequest
 from app.core.user_service import login_user, get_all_users
-from app.utils.jwt_utils import decode_token, create_access_token, create_refresh_token
+from app.utils.jwt_utils import create_access_token, create_refresh_token
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from passlib.hash import bcrypt
-from app.core.user_service import get_authenticated_user
-from app.models.user import User
-from fastapi.security import OAuth2PasswordBearer
+from app.models.user import User, Profile, TokenBlacklist
 import jwt
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 router = APIRouter()
 
+
+
+
+
+"""
+    Register a new user.
+
+    Args:
+        request (UserRegisterRequest): The request payload containing user details.
+        db (Session): Database session dependency.
+        current_user (dict): The current authenticated super admin.
+
+    Returns:
+        dict: A response containing the newly registered user's details.
+
+    Raises:
+        HTTPException: If user registration fails due to invalid data.
+"""
 @router.post("/register")
-def register(request: UserRegisterRequest, db: Session = Depends(get_db)):
+def register(
+    request: UserRegisterRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_super_admin_user)  # Add this dependency
+):
     try:
         user = register_user(db, request)
-        return {"message": "User registered successfully", "user": user.username}
+        return {
+            "message": "User registered successfully",
+            "user": {
+                "email": user.email,
+                "role": user.role
+            }
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+
+
+
+"""
+    Authenticate a user and provide access and refresh tokens.
+
+    Args:
+        login_request (UserLoginRequest): The login credentials provided by the user.
+        db (Session): Database session dependency.
+
+    Returns:
+        dict: A response containing the authentication tokens and token type.
+
+    Raises:
+        HTTPException: If authentication fails due to invalid credentials.
+"""
 @router.post("/login")
 def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
     # Authenticate user
@@ -45,7 +88,24 @@ def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
     else:
         raise HTTPException(status_code=400, detail="Invalid username/email or password")
 
-@router.post("/refresh")
+
+
+
+
+"""
+    Generate a new access token using a valid refresh token.
+
+    Args:
+        refresh_token (str): The refresh token provided by the client.
+        db (Session): Database session dependency.
+
+    Returns:
+        dict: A response containing the new access token and its type.
+
+    Raises:
+        HTTPException: If the refresh token is invalid, expired, or the user does not exist.
+"""
+@router.post("/refresh_token")
 def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
     try:
         # Decode the refresh token
@@ -72,49 +132,154 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    # Assume you have a function to decode the token and retrieve user info (e.g., user_id)
-    user_id = decode_token(token)  # Implement this function according to your JWT setup
-    user = get_authenticated_user(db, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
-@router.get("/all_users")
-def get_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not user.is_admin:
-        raise HTTPException(status_code=403, detail="Only admins can view all users")
 
+"""
+    Retrieve a list of all registered users.
+
+    Args:
+        db (Session): Database session dependency.
+        current_user (dict): Current authenticated super admin.
+
+    Returns:
+        dict: A response containing a list of all users.
+
+    Raises:
+        HTTPException: If the current user is not a super admin.
+"""
+@router.get("/all_users")
+def get_users(db: Session = Depends(get_db), current_user: dict = Depends(get_super_admin_user)):
     # Get all users from the database
     users = get_all_users(db)
-
     return {"users": users}
 
+
+
+
+
+"""
+    Retrieve the current user's profile information. 
+    If a profile does not exist, create a default one.
+
+    Args:
+        user (User): The currently authenticated user.
+        db (Session): Database session dependency.
+
+    Returns:
+        dict: A dictionary containing user and profile information.
+
+    Raises:
+        HTTPException: If the user is not authenticated.
+"""
 @router.get("/me")
-def get_me(user: User = Depends(get_current_user)):
+def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Fetch the user's profile using the user_id
+    profile = db.query(Profile).filter(Profile.user_id == user.id).first()
+
+    if not profile:
+        # Create a profile if it doesn't exist
+        profile = Profile(
+            user_id=user.id,
+            first_name="",
+            last_name="",
+            address="",
+            city="",
+            state="",
+            zip_code="",
+            country=""
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
+    # Return user and profile data without password
     return {
-        "username": user.username,
         "email": user.email,
         "is_active": user.is_active,
-        "is_admin": user.is_admin
+        "role": user.role,
+        "phone": user.phone,
+        "first_name": profile.first_name or "",
+        "last_name": profile.last_name or "",
+        "address": profile.address or "",
+        "city": profile.city or "",
+        "state": profile.state or "",
+        "zip_code": profile.zip_code or "",
+        "country": profile.country or ""
     }
 
-@router.patch("/update_profile")
-async def update_user_profile(
-    user_profile: UpdateUserProfile,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # Assuming you have authentication
-):
-    user_data = user_profile.dict(exclude_unset=True)
-    db.query(User).filter(User.id == current_user.id).update(user_data)
-    db.commit()
-    db.refresh(current_user)
-    return current_user
 
+
+
+
+"""
+    Update or create the current user's profile information.
+
+    Args:
+        profile_data (ProfileUpdateRequest): The profile update payload.
+        db (Session): Database session dependency.
+        current_user (User): The currently authenticated user.
+
+    Returns:
+        ProfileResponse: The updated profile information.
+        
+    Raises:
+        HTTPException: If the user is not authenticated.
+"""
+@router.patch("/update_profile", response_model=ProfileResponse)
+async def update_user_profile(
+        profile_data: ProfileUpdateRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+    if not profile:
+        # Create a new profile if it doesn't exist
+        profile = Profile(user_id=current_user.id, **profile_data.model_dump())
+        db.add(profile)
+    else:
+        # Update the existing profile
+        for key, value in profile_data.model_dump().items():
+            setattr(profile, key, value)
+
+    db.commit()
+    db.refresh(profile)
+
+    return ProfileResponse(
+        first_name=profile.first_name,
+        last_name=profile.last_name,
+        email=current_user.email,
+        phone=current_user.phone,
+        address=profile.address,
+        city=profile.city,
+        state=profile.state,
+        zip_code=profile.zip_code,
+        country=profile.country,
+    )
+
+
+
+
+
+"""
+    Change the current user's password.
+
+    Args:
+        request (ChangePasswordRequest): The password change payload containing old, new, and confirm passwords.
+        db (Session): Database session dependency.
+        current_user (User): The currently authenticated user.
+        token (str): The JWT token used for authentication.
+
+    Returns:
+        dict: A message indicating the password change was successful.
+
+    Raises:
+        HTTPException: If the old password is incorrect, the new password and confirmation do not match, or the user does not exist.
+"""
 @router.post("/change_password")
 async def change_password(
     request: ChangePasswordRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # Assumes user is authenticated
+    current_user: User = Depends(get_current_user),
+    token: str = Depends(oauth2_scheme)  # The current JWT token
 ):
     # Verify the old password
     if not bcrypt.verify(request.old_password, current_user.hashed_password):
@@ -130,4 +295,8 @@ async def change_password(
     db.commit()
     db.refresh(current_user)
 
-    return {"message": "Password changed successfully"}
+    # Add the current token to the blacklist
+    db.add(TokenBlacklist(token=token))
+    db.commit()
+
+    return {"message": "Password changed successfully. Please log in again to continue."}

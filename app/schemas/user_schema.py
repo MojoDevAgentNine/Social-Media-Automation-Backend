@@ -1,30 +1,28 @@
 from pydantic import BaseModel, EmailStr, Field
+from app.models.user import UserRole
+
 
 class UserRegisterRequest(BaseModel):
-    username: str
-    password: str
     email: EmailStr
+    phone: str
+    password: str
+    role: UserRole = UserRole.USER  # Default role is normal user
+
+    class Config:
+        use_enum_values = True
+
 
 class UserUpdateRequest(BaseModel):
-    username: str
     email: EmailStr
+
 
 class PasswordResetRequest(BaseModel):
     new_password: str
 
-class UserLoginRequest(BaseModel):
-    username_or_email: str  # Can be either username or email
-    password: str  # Password is required
 
-class UpdateUserProfile(BaseModel):
-    first_name: str | None = None
-    last_name: str | None = None
-    phone: str | None = None
-    address: str | None = None
-    city: str | None = None
-    state: str | None = None
-    zip_code: str | None = None
-    country: str | None = None
+class UserLoginRequest(BaseModel):
+    email: str  # Can be either username or email
+    password: str  # Password is required
 
 
 class ChangePasswordRequest(BaseModel):
@@ -32,3 +30,27 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=6)
     confirm_password: str = Field(..., min_length=6)
 
+
+class ProfileUpdateRequest(BaseModel):
+    first_name: str
+    last_name: str
+    address: str
+    city: str
+    state: str
+    zip_code: str
+    country: str
+
+
+class ProfileResponse(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    address: str
+    city: str
+    state: str
+    zip_code: str
+    country: str
+
+    class Config:
+        from_attributes = True
