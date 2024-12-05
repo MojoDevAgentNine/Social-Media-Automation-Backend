@@ -55,3 +55,17 @@ class ProfileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class VerificationCodeRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+class LoginResponsePending(BaseModel):
+    message: str
+    email: str
+    requires_verification: bool = True
+
+class LoginResponseComplete(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str

@@ -96,3 +96,16 @@ class TokenBlacklist(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     token = Column(String, unique=True, nullable=False)
+
+
+class EmailVerificationCode(Base):
+    __tablename__ = "email_verification_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    code = Column(String(6), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_used = Column(Boolean, default=False)
+
+    user = relationship("User", backref="verification_codes")
