@@ -14,6 +14,8 @@ from passlib.hash import bcrypt
 from app.models.user import User, Profile, TokenBlacklist
 import jwt
 
+from app.utils.redis import redis_client
+
 router = APIRouter()
 
 
@@ -89,7 +91,7 @@ def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
             "token_type": "bearer"
         }
     else:
-        logger.error(f"Email: {login_request.email}, Role: {login_request.role} - Invalid username/email or password")
+        logger.error(f"Email: {login_request.email} - Invalid username/email or password")
         raise HTTPException(status_code=400, detail="Invalid username/email or password")
 
 
@@ -187,7 +189,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 def get_users(db: Session = Depends(get_db), current_user: dict = Depends(get_super_admin_user)):
     # Get all users from the database
     users = get_all_users(db)
-    logger.info(f"Email: {current_user.get('email')}, Role: {current_user.get('role')} - All users retrieved successfully")
+    logger.info(f"Email: {current_user.email}, Role: {current_user.role} - All users retrieved successfully")
     return {"users": users}
 
 
@@ -268,19 +270,22 @@ async def update_user_profile(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
+    # Fetch the existing profile
     profile = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+
     if not profile:
         # Create a new profile if it doesn't exist
-        profile = Profile(user_id=current_user.id, **profile_data.model_dump())
+        profile = Profile(user_id=current_user.id)
         db.add(profile)
-    else:
-        # Update the existing profile
-        for key, value in profile_data.model_dump().items():
-            setattr(profile, key, value)
+
+    # Update only the provided fields
+    for key, value in profile_data.model_dump(exclude_unset=True).items():
+        setattr(profile, key, value)
 
     db.commit()
     db.refresh(profile)
     logger.info(f"Email: {current_user.email}, Role: {current_user.role} - User profile updated successfully")
+    redis_client.delete("all_users")
     return ProfileResponse(
         first_name=profile.first_name,
         last_name=profile.last_name,
@@ -290,7 +295,7 @@ async def update_user_profile(
         city=profile.city,
         state=profile.state,
         zip_code=profile.zip_code,
-        country=profile.country,
+        country=profile.country
     )
 
 

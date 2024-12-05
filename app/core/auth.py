@@ -7,7 +7,7 @@ from app.schemas.user_schema import UserRegisterRequest
 from datetime import datetime
 from fastapi import HTTPException
 from app.axiom_logger.authentication import logger
-
+from app.utils.redis import redis_client
 
 """
     Registers a new user and creates an initial profile.
@@ -81,6 +81,7 @@ def register_user(db: Session, user: UserRegisterRequest, current_user: User = N
     db.add(initial_profile)
     db.commit()
     db.refresh(initial_profile)
+    redis_client.delete("all_users")
     return new_user
 
 

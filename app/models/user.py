@@ -28,18 +28,33 @@ class User(Base):
 
     profile = relationship("Profile", back_populates="user", uselist=False)
 
-    @staticmethod
-    def get_by_token(token: str, db: Session):
-        """
-        Retrieve a user based on the token.
-        """
-        user_id = decode_token(token)  # Decode the token to get the user_id
-        if not user_id:
-            return None
+    def to_dict(self):
+        """Convert the User object to a dictionary."""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "role": self.role,
+            "is_active": self.is_active,
+            "phone": self.phone,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
+            # Include related objects if needed (e.g., profile)
+            "profile": self.profile.to_dict() if self.profile else None,
+        }
 
-        # Query the database to fetch the user by ID
-        user = db.query(User).filter(User.id == user_id).first()
-        return user
+    # @staticmethod
+    # def get_by_token(token: str, db: Session):
+    #     """
+    #     Retrieve a user based on the token.
+    #     """
+    #     user_id = decode_token(token)  # Decode the token to get the user_id
+    #     if not user_id:
+    #         return None
+    #
+    #     # Query the database to fetch the user by ID
+    #     user = db.query(User).filter(User.id == user_id).first()
+    #     return user
 
 
 class Profile(Base):
@@ -58,6 +73,22 @@ class Profile(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="profile")
+
+    def to_dict(self):
+        """Convert the Profile object to a dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "address": self.address,
+            "city": self.city,
+            "state": self.state,
+            "zip_code": self.zip_code,
+            "country": self.country,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 class TokenBlacklist(Base):

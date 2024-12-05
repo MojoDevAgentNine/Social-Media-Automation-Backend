@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from app.models.user import UserRole
+from typing import Optional
 
 
 class UserRegisterRequest(BaseModel):
@@ -32,13 +33,13 @@ class ChangePasswordRequest(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
-    first_name: str
-    last_name: str
-    address: str
-    city: str
-    state: str
-    zip_code: str
-    country: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
