@@ -2,18 +2,19 @@ import os
 from app.axiom_logger.authentication import logger
 from app.core.permissions import get_super_admin_user, get_current_user, oauth2_scheme
 from app.schemas.user_schema import UserRegisterRequest, ProfileUpdateRequest, \
-    ChangePasswordRequest, ProfileResponse
+    ChangePasswordRequest, ProfileResponse, VerificationCodeRequest, LoginResponsePending, LoginResponseComplete
 from app.core.auth import register_user, login_user
 from app.schemas.user_schema import UserLoginRequest
 from app.core.user_service import login_user, get_all_users
+from app.utils.email_utils import create_verification_code, send_verification_email
 from app.utils.jwt_utils import create_access_token, create_refresh_token
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from passlib.hash import bcrypt
-from app.models.user import User, Profile, TokenBlacklist
+from app.models.user import User, Profile, TokenBlacklist, EmailVerificationCode
 import jwt
-
+from datetime import datetime
 from app.utils.redis import redis_client
 
 router = APIRouter()
@@ -73,26 +74,94 @@ def register(
     Raises:
         HTTPException: If authentication fails due to invalid credentials.
 """
+# @router.post("/login")
+# def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
+#     # Authenticate user
+#     user = login_user(db=db, login_request=login_request)
+#
+#     if user:
+#         # Generate both access and refresh tokens for the authenticated user
+#         access_token = create_access_token(data={"user_id": user.id})
+#         refresh_token = create_refresh_token(data={"user_id": user.id})
+#         logger.info(f"Email: {user.email}, Role: {user.role} - User logged in successfully")
+#         # Return the response with both tokens
+#         return {
+#             "message": "Login successful",
+#             "access_token": access_token,
+#             "refresh_token": refresh_token,
+#             "token_type": "bearer"
+#         }
+#     else:
+#         logger.error(f"Email: {login_request.email} - Invalid username/email or password")
+#         raise HTTPException(status_code=400, detail="Invalid username/email or password")
 @router.post("/login")
 def login(login_request: UserLoginRequest, db: Session = Depends(get_db)):
     # Authenticate user
     user = login_user(db=db, login_request=login_request)
 
     if user:
-        # Generate both access and refresh tokens for the authenticated user
-        access_token = create_access_token(data={"user_id": user.id})
-        refresh_token = create_refresh_token(data={"user_id": user.id})
-        logger.info(f"Email: {user.email}, Role: {user.role} - User logged in successfully")
-        # Return the response with both tokens
-        return {
-            "message": "Login successful",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer"
-        }
+        # Generate and send verification code
+        verification_code = create_verification_code(db, user.id)
+        success = send_verification_email(user.email, verification_code)
+
+        if not success:
+            logger.error(f"Failed to send verification email to {user.email}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send verification email"
+            )
+
+        logger.info(f"Verification code sent to {user.email}")
+        return LoginResponsePending(
+            message="Verification code sent to your email",
+            email=user.email,
+            requires_verification=True
+        )
     else:
-        logger.error(f"Email: {login_request.email} - Invalid username/email or password")
-        raise HTTPException(status_code=400, detail="Invalid username/email or password")
+        logger.error(f"Invalid login attempt for email: {login_request.email}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid username/email or password"
+        )
+
+
+@router.post("/verify-code")
+def verify_code(
+        verification_request: VerificationCodeRequest,
+        db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.email == verification_request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    verification = db.query(EmailVerificationCode).filter(
+        EmailVerificationCode.user_id == user.id,
+        EmailVerificationCode.code == verification_request.code,
+        EmailVerificationCode.is_used == False,
+        EmailVerificationCode.expires_at > datetime.utcnow()
+    ).first()
+
+    if not verification:
+        logger.error(f"Invalid or expired verification code for email: {user.email}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired verification code"
+        )
+
+    # Mark the code as used
+    verification.is_used = True
+    db.commit()
+
+    # Generate tokens
+    access_token = create_access_token(data={"user_id": user.id})
+    refresh_token = create_refresh_token(data={"user_id": user.id})
+
+    logger.info(f"Email: {user.email} verified successfully")
+    return LoginResponseComplete(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer"
+    )
 
 
 
