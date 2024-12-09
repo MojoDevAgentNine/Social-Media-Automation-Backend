@@ -1,5 +1,7 @@
 .idea/
 __pycache__ /
+pycache/
+__pycache__*
 # Virtualenv
 venv
 
